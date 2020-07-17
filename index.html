@@ -1,0 +1,219 @@
+<html>
+
+<head>
+    <!-- Jquery-->
+    <!-- <script src="https://code.jquery.com/jquery-3.5.1.js"
+        integrity="sha256-QWo7LDvxbWT2tbbQ97B53yJnYU3WhH/C8ycbRAkjPDc=" crossorigin="anonymous"></script> -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <!--Bootstrap-->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <!-- <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js"
+        integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo"
+        crossorigin="anonymous"></script> -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"
+        integrity="sha384-UO2eT0CpHqdSJQ6hJty5KVphtPhzWj9WO1clHTMGa3JDZwrnQq4sF86dIHNDz0W1"
+        crossorigin="anonymous"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"
+        integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM"
+        crossorigin="anonymous"></script>
+    <script>
+        var email = "";
+        var currentQuestionId = 0;
+        var answersObject = [];
+        var currentObject
+
+        $(document).ready(function () {
+
+            $("form#email-container").submit(function (e) {
+                e.preventDefault();
+                email = $("#email").val();
+                var emailPattern = /^\w+@[a-zA-Z_]+?\.[a-zA-Z]{2,20}$/;
+                var isEmailValid = emailPattern.test(email);
+                if (isEmailValid) {
+                    $("form#questions").css("display", "block");
+                    $(this).css("display", "none");
+                    getNextQuestion();
+                } else {
+                    alert("Enter a valid email Id");
+                }
+            })
+            // $("form#questions").submit(function (e) {
+            //     e.preventDefault();
+            //     var formData = new FormData(this);
+            //     $.ajax({
+            //         url: "index.php",
+            //         type: "POST",
+            //         data: formData,
+            //         cache: false,
+            //         processData: false,
+            //         success: function (response) {
+            //             console.log(JSON.parse(response))
+            //         }
+            //     })
+            // })
+        })
+        function getNextQuestion() {
+            if (currentQuestionId != 0) {
+                var formData = saveResponse();
+                $.ajax({
+                    url: "get_question.php",
+                    type: "GET",
+                    data: formData,
+                    contentType: 'application/json',
+                    success: function (response) {
+                        currentObject = JSON.parse(response)
+                        currentQuestionId = currentObject.question.id
+                        createQuestion(currentObject);
+                        toggleButton(currentObject);
+                    }
+                })
+            } else {
+                $.ajax({
+                    url: "get_question.php",
+                    type: "GET",
+                    contentType: 'application/json',
+                    success: function (response) {
+                        currentObject = JSON.parse(response)
+                        currentQuestionId = currentObject.question.id
+                        createQuestion(currentObject);
+                    }
+                })
+            }
+            return false;
+        }
+
+        function createQuestion(params) {
+
+            removeContainer();
+            var divElement = document.createElement("div");
+            divElement.setAttribute("class", "form-group");
+            divElement.setAttribute("id", "question-container");
+
+            var label = document.createElement("label");
+            label.innerHTML = params.question.question;
+
+            var selectElement = document.createElement("select");
+            selectElement.setAttribute("class", "form-control")
+            selectElement.setAttribute("id", "question")
+            selectElement.setAttribute("onchange", "toggleButton()")
+
+            for (var i = 0; i < params.answers.length; i++) {
+                var answer = params.answers[i];
+                var optionElement = document.createElement('option')
+                optionElement.setAttribute("value", answer['id']);
+                optionElement.innerHTML = answer['answer'] + " (" + answer['points'] + ")";
+
+                selectElement.append(optionElement);
+            }
+
+            divElement.append(label);
+            divElement.append(selectElement);
+            $("#questions").prepend(divElement);
+        }
+
+        function saveResponse() {
+            var answerId = $("#question option:selected").val();
+            var answerObject = { questionId: currentQuestionId, answerId: answerId };
+            for (var i = 0; i < currentObject.answers.length; i++) {
+                if (currentObject.answers[i].id == answerId) {
+                    answerObject.score = currentObject.answers[i].points
+                }
+            }
+            answersObject.push(answerObject);
+            return answerObject;
+        }
+
+        function toggleButton(param) {
+            var answerId = $("#question option:selected").val();
+            for (var i = 0; i < currentObject.answers.length; i++) {
+                if (currentObject.answers[i].id == answerId) {
+                    if (currentObject.answers[i].next_question_id) {
+                        $("#next").css("display", "block")
+                        $("#finish").css("display", "none")
+                    } else {
+                        $("#next").css("display", "none")
+                        $("#finish").css("display", "block")
+                    }
+                }
+            }
+        }
+
+        function removeContainer() {
+            $("#question-container").remove();
+        }
+
+        function finishForm() {
+            saveResponse()
+            removeContainer()
+            var score = calculateScore();
+            $("#total-score").css("display", "block");
+            $("#total-score").html(email + ": " + parseFloat(score.toPrecision(3)));
+            $("#finish").css("display", "none");
+            var params = $.param({
+                email: email,
+                answersObject: JSON.stringify(answersObject),
+                score: score
+            });
+            $.ajax({
+                url: "save_response.php",
+                type: "POST",
+                dataType: "json",
+                data: params,
+                success: function (response) {
+                    solution = JSON.parse(response)
+                    alert(solution.message)
+                }
+            })
+        }
+
+        function calculateScore() {
+            var score = 0;
+            for (var i = 0; i < answersObject.length; i++) {
+                score += parseFloat(answersObject[i].score);
+            }
+            return score;
+        }
+    </script>
+    <style>
+        h1 {
+            background-color: red;
+            color: white;
+            text-align: center;
+        }
+
+        .nopadding {
+            padding: 0 !important;
+            margin: 0 !important;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-12 nopadding">
+                <h1>Bare Anatomy</h1>
+                <form id="email-container" class="col-md-3 offset-md-4">
+                    <div id="email-container" class="form-group">
+                        <label for="exampleInputEmail1">Email address</label>
+                        <input type="email" class="form-control" id="email" />
+                    </div>
+                    <input type="submit" value="Start" />
+                </form>
+                <form id="questions" class="col-md-3 offset-md-4" style="display: none;">
+                    <button id="next" type="button" class="form-control" onclick="getNextQuestion()">Next</button>
+                    <button id="finish" type="button" class="form-control" style="display: none"
+                        onclick="finishForm()">Finish</button>
+                </form>
+            </div>
+        </div>
+        <div class="row">
+            <div id="total-score" class="col-md-12 nopadding">
+
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>
